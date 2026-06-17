@@ -61,7 +61,7 @@ def parse_pdf(file_bytes, use_db=True):
     current_option = None
     
     # Regex per riconoscere domande: es. "1.", "10.", "1)", "10)"
-    re_question = re.compile(r"^\s*\d+[\.\)]\s+(.*)")
+    re_question = re.compile(r"^\s*\d+[\.\)]\s*(.*)")
     # Regex per riconoscere opzioni: es. "(a)", "a)", "A.", supporta fino a f
     re_option = re.compile(r"^\s*(?:\(([a-fA-F])\)|([a-fA-F])[\.\)])\s+(.*)")
     
