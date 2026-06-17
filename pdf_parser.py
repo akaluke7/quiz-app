@@ -62,8 +62,8 @@ def parse_pdf(file_bytes, use_db=True):
     
     # Regex per riconoscere domande: es. "1.", "10.", "1)", "10)"
     re_question = re.compile(r"^\s*\d+[\.\)]\s+(.*)")
-    # Regex per riconoscere opzioni: es. "(a)", "a)", "A)", "(A)", supporting up to 'f'
-    re_option = re.compile(r"^\s*\(?[a-fA-F]\)?[\.\)]?\s+(.*)")
+    # Regex per riconoscere opzioni: es. "(a)", "a)", "A.", supporta fino a f
+    re_option = re.compile(r"^\s*(?:\(([a-fA-F])\)|([a-fA-F])[\.\)])\s+(.*)")
     
     for page in doc:
         blocks = page.get_text("dict")["blocks"]
@@ -97,6 +97,16 @@ def parse_pdf(file_bytes, use_db=True):
                         current_option = None
                         
                     elif o_match and current_question:
+                        opt_letter = (o_match.group(1) or o_match.group(2)).lower()
+                        # Se troviamo un'opzione 'a' ma la domanda attuale ha già opzioni,
+                        # vuol dire che è iniziata una nuova domanda il cui testo mancava nel PDF.
+                        if opt_letter == 'a' and len(current_question["options"]) > 0:
+                            questions.append(current_question)
+                            current_question = {
+                                "question_text": "[Testo della domanda mancante nel PDF originale]\n",
+                                "options": []
+                            }
+
                         # Check if any span in this line is bold (flags & 16 is bold in fitz)
                         is_bold = any((s["flags"] & 16 != 0) or ("bold" in s["font"].lower()) for s in l["spans"])
                         is_correct = is_bold or ("(Nota:" in cleaned_line) or ("(nota:" in cleaned_line.lower())
@@ -160,4 +170,20 @@ def parse_pdf(file_bytes, use_db=True):
                                     if cand_opt["is_correct"] and option_similarity(opt["text"], cand_opt["text"]) >= 0.7:
                                         opt["is_correct"] = True
                                         
+    # --- CORREZIONE MANUALE ERRORI NEL PDF ---
+    MANUAL_OVERRIDES = {
+        # Frammento domanda (normalizzata) -> Frammento opzione corretta (normalizzata)
+        "decisione di implementare la produzione di un dato bene in una determinata": "pull"
+    }
+    
+    for q in questions:
+        norm_q = normalize_text(q["question_text"])
+        for q_snippet, correct_opt_snippet in MANUAL_OVERRIDES.items():
+            if normalize_text(q_snippet) in norm_q:
+                for opt in q["options"]:
+                    if normalize_text(correct_opt_snippet) in normalize_text(opt["text"]):
+                        opt["is_correct"] = True
+                    else:
+                        opt["is_correct"] = False
+
     return questions
